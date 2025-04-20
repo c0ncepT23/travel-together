@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,13 @@ import {
   TextInput,
   TouchableOpacity,
   FlatList,
-  ActivityIndicator,
-  SafeAreaView,
-  KeyboardAvoidingView,
-  Platform,
   Image,
-  Animated,
+  SafeAreaView,
+  Platform,
   Keyboard,
-  Dimensions
+  ActivityIndicator,
+  Modal,
+  TouchableWithoutFeedback
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { useDispatch, useSelector } from 'react-redux';
@@ -28,49 +27,27 @@ import EmptyStateView from '../../components/common/EmptyStateView';
 
 type ChatRouteProp = RouteProp<DestinationsStackParamList, 'Chat'>;
 
-const windowHeight = Dimensions.get('window').height;
+const HASHTAG_REGEX = /#(\w+)/g;
 
-const ChatScreen: React.FC = () => {
+const ChatScreen = () => {
   const route = useRoute<ChatRouteProp>();
   const navigation = useNavigation();
   const dispatch = useDispatch();
   const [messageText, setMessageText] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const inputRef = useRef<TextInput>(null);
-  const flatListRef = useRef<FlatList>(null);
-  const scrollY = useRef(new Animated.Value(0)).current;
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const flatListRef = useRef(null);
+  
+  // Search state
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [searchResults, setSearchResults] = useState<MessageType[]>([]);
+  const [hashtags, setHashtags] = useState<string[]>([]);
   
   const { destinationId, subDestinationId, title } = route.params || { 
     destinationId: 'unknown', 
     subDestinationId: undefined,
     title: 'Chat'
   };
-  
-  // Set the navigation header title
-  useEffect(() => {
-    navigation.setOptions({
-      title: title || 'Group Chat',
-      headerRight: () => (
-        <View style={styles.headerButtons}>
-          <TouchableOpacity 
-            style={styles.headerButton} 
-            onPress={() => navigation.navigate('ThingsToSee', {
-              destinationId, subDestinationId,
-              title: title || destination?.name
-            })}
-          >
-            <Ionicons name="list-outline" size={22} color="#FFFFFF" />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.headerButton} 
-            onPress={handleHeaderInfoPress}
-          >
-            <Ionicons name="information-circle-outline" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
-      )
-    });
-  }, [navigation, title, destinationId, subDestinationId]);
   
   // Generate group ID for retrieving messages
   const groupId = subDestinationId ? `${destinationId}_${subDestinationId}` : destinationId;
@@ -83,13 +60,70 @@ const ChatScreen: React.FC = () => {
     };
   });
 
-  // Fetch messages when component mounts
+  // Initialize once with header options
+  useEffect(() => {
+    navigation.setOptions({
+      title: title || 'Chat',
+      headerRight: () => (
+        <View style={styles.headerButtons}>
+          <TouchableOpacity 
+            style={styles.headerButton} 
+            onPress={() => setSearchVisible(true)}
+          >
+            <Ionicons name="search" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.headerButton} 
+            onPress={() => navigation.navigate('ThingsToSee', {
+              destinationId,
+              subDestinationId,
+              title: title || 'destination'
+            })}
+          >
+            <Ionicons name="list-outline" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.headerButton} 
+            onPress={() => {
+              // Show group info
+              navigation.navigate('DestinationDetail', { destinationId });
+            }}
+          >
+            <Ionicons name="information-circle-outline" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      )
+    });
+  }, [navigation, title, destinationId, subDestinationId]);
+
+  // Setup keyboard listeners
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+      }
+    );
+    
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+      }
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
+
+  // Load messages once
   useEffect(() => {
     dispatch({
       type: 'FETCH_MESSAGES_REQUEST',
     });
     
-    // Set the active chat
     dispatch({
       type: 'SET_ACTIVE_CHAT',
       payload: {
@@ -98,13 +132,13 @@ const ChatScreen: React.FC = () => {
       }
     });
 
-    // Simulate API call
+    // Mock data
     setTimeout(() => {
       const mockMessages = [
         {
           id: '1',
-          text: 'Hi everyone! I just arrived in Bangkok today. Anyone up for dinner near Sukhumvit?',
-          createdAt: new Date(Date.now() - 3600000 * 2), // 2 hours ago
+          text: 'Hi everyone! I just arrived in Bangkok today. Anyone up for dinner near Sukhumvit? #dinner #sukhumvit',
+          createdAt: new Date(Date.now() - 3600000 * 2),
           user: {
             id: 'user1',
             name: 'Sarah Johnson',
@@ -112,11 +146,12 @@ const ChatScreen: React.FC = () => {
           },
           destinationId,
           subDestinationId,
+          hashtags: ['dinner', 'sukhumvit']
         },
         {
           id: '2',
-          text: 'Welcome to Bangkok! I can recommend Soi 11 for good restaurants.',
-          createdAt: new Date(Date.now() - 3600000), // 1 hour ago
+          text: 'Welcome to Bangkok! I can recommend Soi 11 for good restaurants. #food #restaurants',
+          createdAt: new Date(Date.now() - 3600000),
           user: {
             id: 'user2',
             name: 'Michael Chen',
@@ -124,11 +159,12 @@ const ChatScreen: React.FC = () => {
           },
           destinationId,
           subDestinationId,
+          hashtags: ['food', 'restaurants']
         },
         {
           id: '3',
-          text: "I'm arriving tomorrow. Any tips for getting from the airport to downtown?",
-          createdAt: new Date(Date.now() - 1800000), // 30 minutes ago
+          text: "I'm arriving tomorrow. Any tips for getting from the airport to downtown? #transport #airport",
+          createdAt: new Date(Date.now() - 1800000),
           user: {
             id: 'user3',
             name: 'Emma Wilson',
@@ -136,11 +172,12 @@ const ChatScreen: React.FC = () => {
           },
           destinationId,
           subDestinationId,
+          hashtags: ['transport', 'airport']
         },
         {
           id: '4',
-          text: "The Airport Rail Link is fast and affordable. It connects to the BTS Skytrain at Phaya Thai station. Taxis are also convenient but make sure they use the meter!",
-          createdAt: new Date(Date.now() - 1500000), // 25 minutes ago
+          text: "The Airport Rail Link is fast and affordable. It connects to the BTS Skytrain at Phaya Thai station. Taxis are also convenient but make sure they use the meter! #transport #tips",
+          createdAt: new Date(Date.now() - 1500000),
           user: {
             id: 'user2',
             name: 'Michael Chen',
@@ -148,18 +185,7 @@ const ChatScreen: React.FC = () => {
           },
           destinationId,
           subDestinationId,
-        },
-        {
-          id: '5',
-          text: "Thanks for the tip! Are there any must-visit places that aren't too touristy?",
-          createdAt: new Date(Date.now() - 900000), // 15 minutes ago
-          user: {
-            id: 'user3',
-            name: 'Emma Wilson',
-            avatar: 'https://randomuser.me/api/portraits/women/26.jpg',
-          },
-          destinationId,
-          subDestinationId,
+          hashtags: ['transport', 'tips']
         },
       ];
       
@@ -170,29 +196,147 @@ const ChatScreen: React.FC = () => {
           messages: mockMessages,
         },
       });
-    }, 1000);
-  }, [dispatch, destinationId, subDestinationId]);
+    }, 500);
+  }, [dispatch, destinationId, subDestinationId, groupId]);
 
-  // Keyboard handlers
+  // Extract hashtags from messages when messages change
   useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener(
-      'keyboardDidShow',
-      () => {
-        if (messages.length > 0 && flatListRef.current) {
-          flatListRef.current.scrollToOffset({ offset: 0, animated: true });
+    if (messages.length > 0) {
+      const tagSet = new Set<string>();
+      
+      messages.forEach(message => {
+        const matches = message.text.match(HASHTAG_REGEX);
+        if (matches) {
+          matches.forEach(match => {
+            tagSet.add(match.substring(1).toLowerCase());
+          });
         }
-      }
-    );
-
-    return () => {
-      keyboardDidShowListener.remove();
-    };
+      });
+      
+      setHashtags(Array.from(tagSet));
+    }
   }, [messages]);
 
-  const handleSendMessage = () => {
-    if (messageText.trim() === '') return;
+  // Update search results when search text changes
+  useEffect(() => {
+    if (!searchText.trim()) {
+      setSearchResults([]);
+      return;
+    }
     
-    // Add message to the chat
+    const searchTerm = searchText.toLowerCase();
+    const isHashtagSearch = searchText.startsWith('#');
+    
+    const results = messages.filter(message => {
+      if (isHashtagSearch) {
+        // Search by hashtag
+        const tag = searchText.substring(1).toLowerCase();
+        const messageHashtags = message.hashtags || [];
+        return messageHashtags.some(hashtag => hashtag.toLowerCase().includes(tag));
+      } else {
+        // Search by text content
+        return message.text.toLowerCase().includes(searchTerm);
+      }
+    });
+    
+    setSearchResults(results);
+  }, [searchText, messages]);
+
+  const formatDate = (date) => {
+    const messageDate = new Date(date);
+    const today = new Date();
+    
+    // If same day
+    if (messageDate.toDateString() === today.toDateString()) {
+      return format(messageDate, 'h:mm a');
+    }
+    
+    // If yesterday
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (messageDate.toDateString() === yesterday.toDateString()) {
+      return 'Yesterday, ' + format(messageDate, 'h:mm a');
+    }
+    
+    // Otherwise show full date
+    return format(messageDate, 'MMM d, h:mm a');
+  };
+
+  const insertHashtags = (text) => {
+    if (!text) return null;
+    
+    const parts = text.split(/(#\w+)/g);
+    return parts.map((part, index) => {
+      if (part.match(/#\w+/)) {
+        return (
+          <Text 
+            key={index} 
+            style={styles.hashtag}
+            onPress={() => handleHashtagPress(part.substring(1))}
+          >
+            {part}
+          </Text>
+        );
+      }
+      return <Text key={index}>{part}</Text>;
+    });
+  };
+
+  const handleHashtagPress = (hashtag: string) => {
+    setSearchText(`#${hashtag}`);
+    setSearchVisible(true);
+  };
+
+  const renderMessage = ({ item }) => {
+    const isCurrentUser = item.user.id === 'currentUser';
+    
+    return (
+      <View style={[
+        styles.messageContainer,
+        isCurrentUser ? styles.ownMessageContainer : styles.otherMessageContainer
+      ]}>
+        {!isCurrentUser && (
+          <Image source={{ uri: item.user.avatar }} style={styles.avatar} />
+        )}
+        
+        <View style={[
+          styles.messageContent,
+          isCurrentUser ? styles.ownMessage : styles.otherMessage
+        ]}>
+          {!isCurrentUser && (
+            <Text style={styles.userName}>{item.user.name}</Text>
+          )}
+          
+          <Text style={styles.messageText}>
+            {insertHashtags(item.text)}
+          </Text>
+          
+          <Text style={styles.messageTime}>
+            {formatDate(item.createdAt)}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderListHeader = () => (
+    <View style={styles.listHeader}>
+      <Text style={styles.listHeaderText}>Beginning of conversation</Text>
+    </View>
+  );
+
+  const handleSendMessage = () => {
+    if (!messageText.trim()) return;
+    
+    // Extract hashtags
+    const msgHashtags = [];
+    const matches = messageText.match(HASHTAG_REGEX);
+    if (matches) {
+      matches.forEach(match => {
+        msgHashtags.push(match.substring(1));
+      });
+    }
+    
     const newMessage = {
       id: Date.now().toString(),
       text: messageText,
@@ -204,6 +348,7 @@ const ChatScreen: React.FC = () => {
       },
       destinationId,
       subDestinationId,
+      hashtags: msgHashtags
     };
     
     dispatch({
@@ -215,135 +360,78 @@ const ChatScreen: React.FC = () => {
     });
     
     setMessageText('');
-    setIsTyping(false);
   };
 
-  const handleInputFocus = () => {
-    setIsTyping(true);
-  };
-
-  const handleInputBlur = () => {
-    setIsTyping(false);
-  };
-
-  const handleHeaderInfoPress = () => {
-    // Show group info or member list
-    alert(`Group Info: ${title}\nMembers: ${Math.floor(Math.random() * 30) + 10}`);
-  };
-
-  // Format date for display
-  const formatMessageTime = (date: Date) => {
-    const now = new Date();
-    const messageDate = new Date(date);
-    
-    // If same day, show time only
-    if (messageDate.toDateString() === now.toDateString()) {
-      return format(messageDate, 'h:mm a');
-    }
-    
-    // If within the last week, show day and time
-    const daysAgo = Math.floor((now.getTime() - messageDate.getTime()) / (1000 * 60 * 60 * 24));
-    if (daysAgo < 7) {
-      return format(messageDate, 'EEE h:mm a');
-    }
-    
-    // Otherwise show date and time
-    return format(messageDate, 'MMM d, h:mm a');
-  };
-
-  // Check if a message is the first from a user in a sequence
-  const isFirstMessageFromUser = (message: MessageType, index: number) => {
-    if (index === 0) return true;
-    const previousMessage = messages[index - 1];
-    return previousMessage.user.id !== message.user.id;
-  };
-
-  // Check if a message is from the same user as the previous one
-  const isConsecutiveMessage = (message: MessageType, index: number) => {
-    if (index === 0) return false;
-    const previousMessage = messages[index - 1];
-    return previousMessage.user.id === message.user.id;
-  };
-
-  // Calculate time difference between messages
-  const hasTimeGap = (message: MessageType, index: number) => {
-    if (index === 0) return false;
-    const previousMessage = messages[index - 1];
-    const currentTime = new Date(message.createdAt).getTime();
-    const prevTime = new Date(previousMessage.createdAt).getTime();
-    
-    // Time gap greater than 5 minutes
-    return (currentTime - prevTime) > 5 * 60 * 1000;
-  };
-
-  // Render a message bubble
-  const renderMessage = ({ item, index }: { item: MessageType, index: number }) => {
-    const isCurrentUser = item.user.id === 'currentUser';
-    const showUserInfo = isFirstMessageFromUser(item, index) || hasTimeGap(item, index);
-    const consecutive = isConsecutiveMessage(item, index) && !hasTimeGap(item, index);
-    
-    return (
-      <>
-        {hasTimeGap(item, index) && (
-          <View style={styles.timeGapContainer}>
-            <Text style={styles.timeGapText}>
-              {formatMessageTime(new Date(item.createdAt))}
-            </Text>
-          </View>
-        )}
-        
-        <View style={[
-          styles.messageContainer,
-          isCurrentUser ? styles.currentUserContainer : styles.otherUserContainer,
-          consecutive && !isCurrentUser ? styles.consecutiveMessagePadding : null
-        ]}>
-          {!isCurrentUser && showUserInfo && (
-            <Image 
-              source={{ uri: item.user.avatar }} 
-              style={styles.avatar} 
+  // Render the search modal
+  const renderSearchModal = () => (
+    <Modal
+      visible={searchVisible}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setSearchVisible(false)}
+    >
+      <SafeAreaView style={styles.searchModalContainer}>
+        <View style={styles.searchHeader}>
+          <TouchableOpacity 
+            style={styles.searchBackButton} 
+            onPress={() => setSearchVisible(false)}
+          >
+            <Ionicons name="arrow-back" size={24} color="#333333" />
+          </TouchableOpacity>
+          
+          <View style={styles.searchInputContainer}>
+            <Ionicons name="search" size={20} color="#666666" />
+            <TextInput
+              style={styles.searchInput}
+              value={searchText}
+              onChangeText={setSearchText}
+              placeholder="Search messages or #hashtags"
+              autoFocus
+              clearButtonMode="while-editing"
             />
-          )}
-          
-          {!isCurrentUser && consecutive && !showUserInfo && (
-            <View style={styles.avatarPlaceholder} />
-          )}
-          
-          <View style={[
-            styles.messageContent,
-            isCurrentUser ? styles.currentUserContent : styles.otherUserContent,
-            consecutive && !showUserInfo && !isCurrentUser ? styles.consecutiveMessage : null
-          ]}>
-            {!isCurrentUser && showUserInfo && (
-              <Text style={styles.userName}>{item.user.name}</Text>
-            )}
-            
-            <Text style={[
-              styles.messageText,
-              isCurrentUser ? styles.currentUserText : styles.otherUserText
-            ]}>
-              {item.text}
-            </Text>
-            
-            {showUserInfo && isCurrentUser && (
-              <Text style={styles.timeText}>
-                {formatMessageTime(new Date(item.createdAt))}
-              </Text>
+            {searchText.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchText('')}>
+                <Ionicons name="close-circle" size={20} color="#666666" />
+              </TouchableOpacity>
             )}
           </View>
         </View>
-      </>
-    );
-  };
-
-  // Custom header component for the FlatList
-  const renderListHeader = () => (
-    <View style={styles.listHeader}>
-      <View style={styles.listHeaderLine} />
-      <Text style={styles.listHeaderText}>
-        Beginning of conversation
-      </Text>
-      <View style={styles.listHeaderLine} />
-    </View>
+        
+        {searchText.length === 0 ? (
+          // Show all hashtags when not searching
+          <View style={styles.hashtagContainer}>
+            <Text style={styles.hashtagTitle}>Popular Hashtags</Text>
+            <View style={styles.hashtagList}>
+              {hashtags.map(tag => (
+                <TouchableOpacity 
+                  key={tag} 
+                  style={styles.hashtagButton}
+                  onPress={() => setSearchText(`#${tag}`)}
+                >
+                  <Text style={styles.hashtagButtonText}>#{tag}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ) : (
+          // Show search results
+          <FlatList
+            data={searchResults}
+            renderItem={renderMessage}
+            keyExtractor={item => item.id}
+            ListEmptyComponent={
+              <View style={styles.emptySearchContainer}>
+                <Ionicons name="search-outline" size={48} color="#CCCCCC" />
+                <Text style={styles.emptySearchText}>
+                  No messages found for "{searchText}"
+                </Text>
+              </View>
+            }
+            contentContainerStyle={styles.searchResultsList}
+          />
+        )}
+      </SafeAreaView>
+    </Modal>
   );
 
   if (loading && messages.length === 0) {
@@ -369,82 +457,49 @@ const ChatScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardAvoid}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-      >
-        <Animated.View 
-          style={[
-            styles.header,
-            {
-              opacity: scrollY.interpolate({
-                inputRange: [0, 50],
-                outputRange: [0, 1],
-                extrapolate: 'clamp'
-              })
-            }
-          ]}
-        >
-          <Text style={styles.headerText}>
-            {messages.length} messages in #{title || 'chat'}
-          </Text>
-        </Animated.View>
-        
+      <View style={styles.messagesContainer}>
         <FlatList
           ref={flatListRef}
           data={messages}
           renderItem={renderMessage}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.messagesContainer}
-          inverted
+          keyExtractor={item => item.id}
           ListHeaderComponent={renderListHeader}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            { useNativeDriver: false }
-          )}
-          scrollEventThrottle={16}
+          contentContainerStyle={styles.listContent}
+          inverted
         />
+      </View>
+      
+      <View style={styles.inputArea}>
+        <TouchableOpacity style={styles.attachButton}>
+          <Ionicons name="add-circle-outline" size={24} color="#777777" />
+        </TouchableOpacity>
         
-        <View style={styles.inputContainer}>
-          <TouchableOpacity style={styles.attachButton}>
-            <Ionicons name="add-circle" size={24} color="#0066CC" />
-          </TouchableOpacity>
-          
-          <View style={styles.inputWrapper}>
-            <TextInput
-              ref={inputRef}
-              style={styles.input}
-              value={messageText}
-              onChangeText={setMessageText}
-              placeholder="Send a message..."
-              multiline
-              maxHeight={100}
-              onFocus={handleInputFocus}
-              onBlur={handleInputBlur}
-            />
-            
-            <TouchableOpacity style={styles.emojiButton}>
-              <Ionicons name="happy-outline" size={24} color="#666666" />
-            </TouchableOpacity>
-          </View>
-          
-          <TouchableOpacity 
-            style={[
-              styles.sendButton,
-              messageText.trim() === '' ? styles.sendButtonDisabled : null
-            ]}
-            onPress={handleSendMessage}
-            disabled={messageText.trim() === ''}
-          >
-            <Ionicons 
-              name="send" 
-              size={20} 
-              color={messageText.trim() === '' ? '#CCCCCC' : '#FFFFFF'} 
-            />
-          </TouchableOpacity>
+        <View style={styles.inputWrapper}>
+          <TextInput
+            style={styles.input}
+            value={messageText}
+            onChangeText={setMessageText}
+            placeholder="Send a message... Use #hashtags for topics"
+            placeholderTextColor="#999999"
+            multiline
+            maxHeight={80}
+          />
         </View>
-      </KeyboardAvoidingView>
+        
+        <TouchableOpacity
+          style={styles.sendButton}
+          onPress={handleSendMessage}
+          disabled={!messageText.trim()}
+        >
+          <Ionicons
+            name={messageText.trim() ? "send" : "mic"}
+            size={20}
+            color="#FFFFFF"
+          />
+        </TouchableOpacity>
+      </View>
+      
+      {renderSearchModal()}
     </SafeAreaView>
   );
 };
@@ -452,201 +507,198 @@ const ChatScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  keyboardAvoid: {
-    flex: 1,
+    backgroundColor: '#ECE5DD',
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
   },
   loadingText: {
-    marginTop: 10,
+    marginTop: 12,
     fontSize: 16,
-    color: '#666666',
-  },
-  header: {
-    backgroundColor: 'rgba(248, 249, 250, 0.9)',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E4E6EB',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
-  headerText: {
-    fontSize: 13,
-    color: '#65676B',
-    textAlign: 'center',
-  },
-  headerButton: {
-    padding: 8,
-    marginRight: 8,
-  },
-  messagesContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    paddingTop: 10,
-  },
-  listHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  listHeaderLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E4E6EB',
-  },
-  listHeaderText: {
-    fontSize: 12,
-    color: '#65676B',
-    marginHorizontal: 8,
-  },
-  timeGapContainer: {
-    alignItems: 'center',
-    marginVertical: 16,
-  },
-  timeGapText: {
-    fontSize: 12,
-    color: '#65676B',
-    backgroundColor: '#F0F2F5',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  messageContainer: {
-    flexDirection: 'row',
-    marginBottom: 4,
-    alignItems: 'flex-end',
-  },
-  currentUserContainer: {
-    justifyContent: 'flex-end',
-    marginLeft: 50,
-  },
-  otherUserContainer: {
-    justifyContent: 'flex-start',
-    marginRight: 50,
-  },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    marginRight: 8,
-  },
-  avatarPlaceholder: {
-    width: 32,
-    height: 5,
-    marginRight: 8,
-  },
-  messageContent: {
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    maxWidth: '80%',
-  },
-  consecutiveMessage: {
-    borderTopLeftRadius: 4,
-  },
-  consecutiveMessagePadding: {
-    paddingLeft: 40,
-  },
-  currentUserContent: {
-    backgroundColor: '#0084FF',
-    borderBottomRightRadius: 4,
-  },
-  otherUserContent: {
-    backgroundColor: '#E4E6EB',
-    borderBottomLeftRadius: 4,
-  },
-  userName: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#65676B',
-    marginBottom: 4,
-  },
-  messageText: {
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  currentUserText: {
-    color: '#FFFFFF',
-  },
-  otherUserText: {
-    color: '#050505',
-  },
-  timeText: {
-    fontSize: 10,
-    color: 'rgba(255, 255, 255, 0.7)',
-    alignSelf: 'flex-end',
-    marginTop: 2,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    padding: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#E4E6EB',
-    alignItems: 'flex-end',
-    backgroundColor: '#FFFFFF',
-  },
-  attachButton: {
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  inputWrapper: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: '#F0F2F5',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    alignItems: 'flex-end',
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    maxHeight: 100,
-    minHeight: 24,
-    paddingTop: 6,
-    paddingBottom: 6,
-    color: '#050505',
-  },
-  emojiButton: {
-    width: 30,
-    height: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 4,
-  },
-  sendButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#0084FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  sendButtonDisabled: {
-    backgroundColor: '#F0F2F5',
+    color: '#777777',
   },
   headerButtons: {
     flexDirection: 'row',
-    alignItems: 'center',
   },
   headerButton: {
+    marginLeft: 15,
+  },
+  messagesContainer: {
+    flex: 1,
+  },
+  listContent: {
+    paddingHorizontal: 8,
+    paddingVertical: 16,
+  },
+  listHeader: {
+    alignItems: 'center',
+    marginVertical: 20,
+    backgroundColor: '#ECE5DD',
+  },
+  listHeaderText: {
+    fontSize: 12,
+    color: '#777777',
+    backgroundColor: 'rgba(225, 245, 254, 0.8)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  messageContainer: {
+    flexDirection: 'row',
+    marginVertical: 4,
+    paddingHorizontal: 8,
+  },
+  ownMessageContainer: {
+    justifyContent: 'flex-end',
+  },
+  otherMessageContainer: {
+    justifyContent: 'flex-start',
+  },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginRight: 8,
+    alignSelf: 'flex-end',
+    marginBottom: 6,
+  },
+  messageContent: {
+    maxWidth: '75%',
+    borderRadius: 8,
     padding: 8,
+    marginBottom: 2,
+  },
+  ownMessage: {
+    backgroundColor: '#DCF8C6',
+    borderTopRightRadius: 0,
+  },
+  otherMessage: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 0,
+  },
+  userName: {
+    fontWeight: 'bold',
+    fontSize: 13,
+    color: '#075E54',
+    marginBottom: 2,
+  },
+  messageText: {
+    fontSize: 16,
+    color: '#000000',
+    marginBottom: 4,
+  },
+  hashtag: {
+    color: '#128C7E',
+    fontWeight: '500',
+  },
+  messageTime: {
+    fontSize: 11,
+    color: '#777777',
+    alignSelf: 'flex-end',
+  },
+  inputArea: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 8,
+  },
+  inputWrapper: {
+    flex: 1,
+    backgroundColor: '#ECECEC',
+    borderRadius: 20,
+    marginHorizontal: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  input: {
+    fontSize: 16,
+    color: '#333333',
+    minHeight: 24,
+    maxHeight: 120,
+  },
+  attachButton: {
+    padding: 8,
+  },
+  sendButton: {
+    backgroundColor: '#128C7E',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  // Search modal styles
+  searchModalContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  searchHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0066CC',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+  },
+  searchBackButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    marginRight: 8,
+  },
+  searchInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
     marginLeft: 8,
+    color: '#333333',
+  },
+  searchResultsList: {
+    padding: 16,
+  },
+  emptySearchContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 40,
+  },
+  emptySearchText: {
+    fontSize: 16,
+    color: '#777777',
+    marginTop: 16,
+  },
+  hashtagContainer: {
+    padding: 16,
+  },
+  hashtagTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333333',
+    marginBottom: 16,
+  },
+  hashtagList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  hashtagButton: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    margin: 4,
+  },
+  hashtagButtonText: {
+    color: '#128C7E',
+    fontWeight: '500',
   },
 });
 
