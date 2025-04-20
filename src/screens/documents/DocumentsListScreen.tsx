@@ -21,6 +21,7 @@ import { DocumentsStackParamList } from '../../navigation/DocumentsNavigator';
 import { RootState } from '../../store/reducers';
 import { TravelDocument } from '../../store/reducers/profileReducer';
 import EmptyStateView from '../../components/common/EmptyStateView';
+import { fetchUserDocuments } from '../../store/actions/profileActions';
 
 type DocumentsScreenNavigationProp = StackNavigationProp<
   DocumentsStackParamList,
@@ -172,8 +173,9 @@ const DocumentsListScreen: React.FC = () => {
 
   const onRefresh = () => {
     setRefreshing(true);
-    dispatch(fetchTravelDocuments() as any);
-    setRefreshing(false);
+    dispatch(fetchUserDocuments() as any).finally(() => {
+      setRefreshing(false);
+    });
   };
 
   const handleDocumentPress = (document: TravelDocument) => {

@@ -18,6 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
+import { uploadDocument } from '../../store/actions/profileActions';
+import { storageService } from '../../services/firebase/storageService';
 
 // Import types
 import { DocumentsStackParamList } from '../../navigation/DocumentsNavigator';
@@ -32,31 +34,33 @@ type UploadDocumentNavigationProp = StackNavigationProp<
   'UploadDocument'
 >;
 
+const [uploadProgress, setUploadProgress] = useState(0);
+
 // Mock action for uploading a document
-const uploadDocument = (documentData: any) => {
-  return (dispatch: any) => {
-    dispatch({ type: 'UPLOAD_DOCUMENT_REQUEST' });
+// const uploadDocument = (documentData: any) => {
+//   return (dispatch: any) => {
+//     dispatch({ type: 'UPLOAD_DOCUMENT_REQUEST' });
     
-    // Simulate API call with timeout
-    setTimeout(() => {
-      // In a real app, this would be a form submission to an API
-      const documentId = Date.now().toString();
+//     // Simulate API call with timeout
+//     setTimeout(() => {
+//       // In a real app, this would be a form submission to an API
+//       const documentId = Date.now().toString();
       
-      dispatch({
-        type: 'UPLOAD_DOCUMENT_SUCCESS',
-        payload: {
-          id: documentId,
-          ...documentData,
-          uploadDate: new Date().toISOString().split('T')[0],
-          status: 'pending',
-          fileUrl: 'https://example.com/document.pdf', // This would be the URL from the API
-        },
-      });
+//       dispatch({
+//         type: 'UPLOAD_DOCUMENT_SUCCESS',
+//         payload: {
+//           id: documentId,
+//           ...documentData,
+//           uploadDate: new Date().toISOString().split('T')[0],
+//           status: 'pending',
+//           fileUrl: 'https://example.com/document.pdf', // This would be the URL from the API
+//         },
+//       });
       
-      return documentId;
-    }, 1500);
-  };
-};
+//       return documentId;
+//     }, 1500);
+//   };
+// };
 
 const UploadDocumentScreen: React.FC = () => {
   const route = useRoute<UploadDocumentRouteProp>();
@@ -162,43 +166,59 @@ const UploadDocumentScreen: React.FC = () => {
     return true;
   };
   
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validateForm()) return;
     
     setUploading(true);
     
-    const documentData = {
-      type: documentType,
-      title,
-      destination,
-      startDate: startDate.toISOString().split('T')[0],
-      endDate: endDate.toISOString().split('T')[0],
-      details: documentType === 'flight'
-        ? { flightNumber, airline }
-        : documentType === 'hotel'
-          ? { hotelName, bookingReference }
-          : undefined,
-    };
-    
     try {
-      dispatch(uploadDocument(documentData) as any)
-        .then((documentId: string) => {
-          setUploading(false);
-          Alert.alert(
-            'Success',
-            'Document uploaded successfully. It will be reviewed shortly.',
-            [{ text: 'OK', onPress: () => navigation.goBack() }]
-          );
-        })
-        .catch((error: any) => {
-          setUploading(false);
-          Alert.alert('Error', 'Failed to upload document. Please try again.');
-          console.error('Error uploading document:', error);
-        });
-    } catch (error) {
+      let fileUrl = '';
+      
+      // If there is a selected file, upload it
+      if (selectedFile && selectedFile.type === 'success') {
+        // Set up a progress handler
+        const handleProgress = (progress: number) => {
+          setUploadProgress(progress);
+        };
+        
+        // Upload the file to Firebase Storage
+        fileUrl = await storageService.uploadDocumentFile(
+          selectedFile.uri,
+          documentType,
+          handleProgress
+        );
+      }
+      
+      // Create the document data
+      const documentData = {
+        type: documentType,
+        title,
+        destination,
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0],
+        fileUrl, // URL from Firebase Storage
+        uploadDate: new Date().toISOString().split('T')[0],
+        status: 'pending',
+        details: documentType === 'flight'
+          ? { flightNumber, airline }
+          : documentType === 'hotel'
+            ? { hotelName, bookingReference }
+            : undefined,
+      };
+      
+      // Add document to Firestore via Redux action
+      const documentId = await dispatch(uploadDocument(documentData) as any);
+      
       setUploading(false);
-      Alert.alert('Error', 'Failed to upload document');
+      Alert.alert(
+        'Success',
+        'Document uploaded successfully. It will be reviewed shortly.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
+    } catch (error) {
       console.error('Error uploading document:', error);
+      setUploading(false);
+      Alert.alert('Error', 'Failed to upload document. Please try again.');
     }
   };
   
@@ -441,6 +461,12 @@ const UploadDocumentScreen: React.FC = () => {
                 </Text>
               </View>
             )}
+            {selectedFile && uploading && (
+              <View style={styles.progressContainer}>
+                <View style={[styles.progressBar, { width: `${uploadProgress * 100}%` }]} />
+                <Text style={styles.progressText}>{Math.round(uploadProgress * 100)}%</Text>
+              </View>
+            )}
           </View>
         </View>
       </ScrollView>
@@ -666,6 +692,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FFFFFF',
     fontWeight: '600',
+  },
+  progressContainer: {
+    height: 20,
+    width: '100%',
+    backgroundColor: '#F0F0F0',
+    borderRadius: 10,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#0066CC',
+  },
+  progressText: {
+    position: 'absolute',
+    width: '100%',
+    textAlign: 'center',
+    color: '#333333',
+    fontSize: 12,
+    fontWeight: 'bold',
+    lineHeight: 20,
   },
 });
 

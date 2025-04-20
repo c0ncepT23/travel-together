@@ -9,7 +9,8 @@ import {
   Image,
   StatusBar,
   Platform,
-  SafeAreaView
+  SafeAreaView,
+  Alert
 } from 'react-native';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -21,6 +22,7 @@ import { format } from 'date-fns';
 import { DestinationsStackParamList } from '../../navigation/DestinationsNavigator';
 import { RootState } from '../../store/reducers';
 import { Destination, SubDestination } from '../../store/reducers/destinationReducer';
+import { joinDestinationGroup, leaveDestinationGroup } from '../../store/actions/destinationActions';
 
 type DestinationDetailRouteProp = RouteProp<
   DestinationsStackParamList,
@@ -121,15 +123,20 @@ const DestinationDetailScreen: React.FC = () => {
 
   const handleJoinSubDestination = (subDestination: SubDestination) => {
     setLoading(true);
-    // Simulate network request
-    setTimeout(() => {
+    
+    try {
       if (subDestination.isJoined) {
-        dispatch(leaveSubDestination(destinationId, subDestination.id));
+        dispatch(leaveDestinationGroup(destinationId, subDestination.id) as any)
+          .finally(() => setLoading(false));
       } else {
-        dispatch(joinSubDestination(destinationId, subDestination.id));
+        dispatch(joinDestinationGroup(destinationId, subDestination.id) as any)
+          .finally(() => setLoading(false));
       }
+    } catch (error) {
+      console.error('Error toggling group membership:', error);
       setLoading(false);
-    }, 500);
+      Alert.alert('Error', 'Failed to update group membership. Please try again.');
+    }
   };
 
   const navigateToSubDestination = (subDestination: SubDestination) => {

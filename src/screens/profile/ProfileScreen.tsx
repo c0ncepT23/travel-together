@@ -17,11 +17,15 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useSelector, useDispatch } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
+import { auth } from '../../services/firebase/firebaseConfig';
 
 // Import components and types
 import { ProfileStackParamList } from '../../navigation/ProfileNavigator';
 import { RootState } from '../../store/reducers';
 import { useAuth } from '../../services/auth/AuthContext';
+
+// Import services and actions
+import { fetchUserProfile } from '../../store/actions/profileActions';
 
 type ProfileScreenNavigationProp = StackNavigationProp<
   ProfileStackParamList,
@@ -83,7 +87,8 @@ const ProfileScreen: React.FC = () => {
   );
   
   useEffect(() => {
-    dispatch(fetchProfile() as any);
+    // Fetch the user profile from Firestore
+    dispatch(fetchUserProfile() as any);
   }, [dispatch]);
   
   const headerHeight = scrollY.interpolate({
@@ -126,6 +131,15 @@ const ProfileScreen: React.FC = () => {
   
   const handlePastTrips = () => {
     navigation.navigate('PastTrips');
+  };
+
+  // Use this helper function to get initials if no avatar
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(word => word[0])
+      .join('')
+      .toUpperCase();
   };
   
   const handleSignOut = async () => {

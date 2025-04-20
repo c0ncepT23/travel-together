@@ -16,8 +16,14 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF"
-      }
+      },
+      "package": "com.mawnster.traveltogether"
     },
-    "newArchEnabled": true
+    "newArchEnabled": true,
+    "extra": {
+      "eas": {
+        "projectId": "edb791c9-bcdc-41eb-8e2b-238395ffd2da"
+      }
+    }
   }
 }

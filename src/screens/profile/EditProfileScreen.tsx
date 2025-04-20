@@ -19,10 +19,15 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { useSelector, useDispatch } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { auth } from '../../services/firebase/firebaseConfig';
 
 // Import components and types
 import { ProfileStackParamList } from '../../navigation/ProfileNavigator';
 import { RootState } from '../../store/reducers';
+
+// Import services and actions
+import { storageService } from '../../services/firebase/storageService';
+import { updateUserProfile } from '../../store/actions/profileActions';
 
 type EditProfileNavigationProp = StackNavigationProp<
   ProfileStackParamList,
@@ -97,10 +102,30 @@ const EditProfileScreen: React.FC = () => {
       
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const selectedImage = result.assets[0];
-        if (type === 'avatar') {
-          setAvatar(selectedImage.uri);
-        } else {
-          setCoverPhoto(selectedImage.uri);
+        
+        // Show loading indicator
+        setLoading(true);
+        
+        try {
+          // Upload to Firebase Storage
+          const downloadUrl = await storageService.uploadProfileImage(
+            selectedImage.uri,
+            (progress) => {
+              console.log(`Upload progress: ${progress * 100}%`);
+            }
+          );
+          
+          // Update local state
+          if (type === 'avatar') {
+            setAvatar(downloadUrl);
+          } else {
+            setCoverPhoto(downloadUrl);
+          }
+        } catch (error) {
+          console.error('Error uploading image:', error);
+          Alert.alert('Upload Failed', 'Failed to upload image. Please try again.');
+        } finally {
+          setLoading(false);
         }
       }
     } catch (error) {
@@ -149,24 +174,56 @@ const EditProfileScreen: React.FC = () => {
       return;
     }
     
-    const updatedProfile = {
-      ...profile,
-      name,
-      email,
-      bio,
-      country,
-      avatar,
-      coverPhoto,
-      languages,
-      travelPreferences: preferences,
-    };
+    setLoading(true);
     
     try {
-      await dispatch(updateProfile(updatedProfile) as any);
+      const currentUser = auth().currentUser;
+      if (!currentUser) {
+        throw new Error('Not authenticated');
+      }
+      
+      // Update Firebase Auth profile
+      await currentUser.updateProfile({
+        displayName: name,
+        photoURL: avatar,
+      });
+      
+      // If email changed, update it in Firebase Auth
+      if (email !== currentUser.email) {
+        await currentUser.updateEmail(email);
+      }
+      
+      // Update Firestore profile
+      const updatedProfile = {
+        name,
+        email,
+        bio,
+        country,
+        avatar,
+        coverPhoto,
+        languages,
+        travelPreferences: preferences,
+      };
+      
+      await dispatch(updateUserProfile(updatedProfile) as any);
+      
+      setLoading(false);
+      Alert.alert('Success', 'Profile updated successfully');
       navigation.goBack();
     } catch (error) {
       console.error('Error updating profile:', error);
-      Alert.alert('Error', 'Failed to update profile. Please try again.');
+      setLoading(false);
+      
+      // Handle specific Firebase errors
+      if (error.code === 'auth/requires-recent-login') {
+        Alert.alert(
+          'Authentication Required',
+          'Please sign out and sign in again to update your email.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('Error', 'Failed to update profile. Please try again.');
+      }
     }
   };
   

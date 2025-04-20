@@ -81,17 +81,21 @@ const RegisterScreen: React.FC = () => {
     setLoading(true);
     
     try {
-      // In a real app, this would make an API call to register
-      // For now, we'll simulate a successful registration after a delay
-      setTimeout(async () => {
-        // Generate a mock token
-        const mockToken = 'mock-auth-token-' + Date.now();
-        await signUp(mockToken);
-        // Registration success is handled by the auth context
-        // which will redirect to the app screens
-      }, 1500);
+      await signUp(email, password, name);
+      // Registration successful - the AuthContext will handle navigation
     } catch (err: any) {
-      setError(err.message || 'Failed to register');
+      const errorCode = err.code;
+      let errorMessage = 'Failed to register';
+      
+      if (errorCode === 'auth/email-already-in-use') {
+        errorMessage = 'This email is already registered';
+      } else if (errorCode === 'auth/invalid-email') {
+        errorMessage = 'Invalid email format';
+      } else if (errorCode === 'auth/weak-password') {
+        errorMessage = 'Password is too weak. Use at least 6 characters';
+      }
+      
+      setError(errorMessage);
       setLoading(false);
     }
   };

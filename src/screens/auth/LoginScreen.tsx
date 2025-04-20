@@ -56,21 +56,22 @@ const LoginScreen: React.FC = () => {
     setLoading(true);
     
     try {
-      // In a real app, this would make an API call to authenticate
-      // For now, we'll simulate a successful login after a delay
-      setTimeout(async () => {
-        // Check against mock credentials
-        if (email === 'demo@example.com' && password === 'password') {
-          // Generate a mock token
-          const mockToken = 'mock-auth-token-' + Date.now();
-          await signIn(mockToken);
-        } else {
-          setError('Invalid email or password');
-          setLoading(false);
-        }
-      }, 1500);
+      await signIn(email, password);
+      // Authentication successful - the AuthContext will handle navigation
     } catch (err: any) {
-      setError(err.message || 'Failed to login');
+      const errorCode = err.code;
+      let errorMessage = 'Failed to login';
+      
+      // Provide more helpful error messages
+      if (errorCode === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email address';
+      } else if (errorCode === 'auth/wrong-password') {
+        errorMessage = 'Invalid password';
+      } else if (errorCode === 'auth/invalid-email') {
+        errorMessage = 'Invalid email format';
+      }
+      
+      setError(errorMessage);
       setLoading(false);
     }
   };

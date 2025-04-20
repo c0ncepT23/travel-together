@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,18 +12,23 @@ import {
   Keyboard,
   ActivityIndicator,
   Modal,
-  TouchableWithoutFeedback
+  Alert
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
+import { auth } from '../../services/firebase/firebaseConfig';
+import { debounce } from 'lodash';
 
 // Import components and types
 import { DestinationsStackParamList } from '../../navigation/DestinationsNavigator';
 import { RootState } from '../../store/reducers';
 import { Message as MessageType } from '../../store/reducers/chatReducer';
 import EmptyStateView from '../../components/common/EmptyStateView';
+
+// Import new action creators for Firebase-backed chat
+import { fetchMessages, sendMessage, subscribeToMessages } from '../../store/actions/chatActions';
 
 type ChatRouteProp = RouteProp<DestinationsStackParamList, 'Chat'>;
 
@@ -36,6 +41,7 @@ const ChatScreen = () => {
   const [messageText, setMessageText] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const flatListRef = useRef(null);
+  const loadedRef = useRef(false);
   
   // Search state
   const [searchVisible, setSearchVisible] = useState(false);
@@ -59,6 +65,39 @@ const ChatScreen = () => {
       error: state.chat.error,
     };
   });
+
+  // Add debounced search function for better performance
+  const debouncedSearch = useCallback(
+    debounce((text: string) => {
+      if (!text.trim()) {
+        if (searchResults.length > 0) {
+          setSearchResults([]);
+        }
+        return;
+      }
+      
+      const searchTerm = text.toLowerCase();
+      const isHashtagSearch = text.startsWith('#');
+      
+      const results = messages.filter(message => {
+        if (isHashtagSearch) {
+          // Search by hashtag
+          const tag = text.substring(1).toLowerCase();
+          const messageHashtags = message.hashtags || [];
+          return messageHashtags.some(hashtag => hashtag.toLowerCase().includes(tag));
+        } else {
+          // Search by text content
+          return message.text.toLowerCase().includes(searchTerm);
+        }
+      });
+      
+      // Only update state if the results have actually changed
+      if (JSON.stringify(results) !== JSON.stringify(searchResults)) {
+        setSearchResults(results);
+      }
+    }, 300),
+    [messages, searchResults]
+  );
 
   // Initialize once with header options
   useEffect(() => {
@@ -118,86 +157,25 @@ const ChatScreen = () => {
     };
   }, []);
 
-  // Load messages once
+  // Load messages and subscribe to real-time updates
   useEffect(() => {
-    dispatch({
-      type: 'FETCH_MESSAGES_REQUEST',
-    });
-    
-    dispatch({
-      type: 'SET_ACTIVE_CHAT',
-      payload: {
-        destinationId,
-        subDestinationId
-      }
-    });
-
-    // Mock data
-    setTimeout(() => {
-      const mockMessages = [
-        {
-          id: '1',
-          text: 'Hi everyone! I just arrived in Bangkok today. Anyone up for dinner near Sukhumvit? #dinner #sukhumvit',
-          createdAt: new Date(Date.now() - 3600000 * 2),
-          user: {
-            id: 'user1',
-            name: 'Sarah Johnson',
-            avatar: 'https://randomuser.me/api/portraits/women/42.jpg',
-          },
-          destinationId,
-          subDestinationId,
-          hashtags: ['dinner', 'sukhumvit']
-        },
-        {
-          id: '2',
-          text: 'Welcome to Bangkok! I can recommend Soi 11 for good restaurants. #food #restaurants',
-          createdAt: new Date(Date.now() - 3600000),
-          user: {
-            id: 'user2',
-            name: 'Michael Chen',
-            avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-          },
-          destinationId,
-          subDestinationId,
-          hashtags: ['food', 'restaurants']
-        },
-        {
-          id: '3',
-          text: "I'm arriving tomorrow. Any tips for getting from the airport to downtown? #transport #airport",
-          createdAt: new Date(Date.now() - 1800000),
-          user: {
-            id: 'user3',
-            name: 'Emma Wilson',
-            avatar: 'https://randomuser.me/api/portraits/women/26.jpg',
-          },
-          destinationId,
-          subDestinationId,
-          hashtags: ['transport', 'airport']
-        },
-        {
-          id: '4',
-          text: "The Airport Rail Link is fast and affordable. It connects to the BTS Skytrain at Phaya Thai station. Taxis are also convenient but make sure they use the meter! #transport #tips",
-          createdAt: new Date(Date.now() - 1500000),
-          user: {
-            id: 'user2',
-            name: 'Michael Chen',
-            avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-          },
-          destinationId,
-          subDestinationId,
-          hashtags: ['transport', 'tips']
-        },
-      ];
+    if (!loadedRef.current) {
+      loadedRef.current = true;
       
-      dispatch({
-        type: 'FETCH_MESSAGES_SUCCESS',
-        payload: {
-          groupId,
-          messages: mockMessages,
-        },
-      });
-    }, 500);
-  }, [dispatch, destinationId, subDestinationId, groupId]);
+      // Initially load messages
+      dispatch(fetchMessages(destinationId, subDestinationId) as any);
+      
+      // Subscribe to real-time updates
+      const unsubscribe = dispatch(subscribeToMessages(destinationId, subDestinationId) as any);
+      
+      // Cleanup function to unsubscribe when component unmounts
+      return () => {
+        if (unsubscribe && typeof unsubscribe === 'function') {
+          unsubscribe();
+        }
+      };
+    }
+  }, [dispatch, destinationId, subDestinationId]);
 
   // Extract hashtags from messages when messages change
   useEffect(() => {
@@ -212,38 +190,23 @@ const ChatScreen = () => {
           });
         }
       });
+      const newHashtags = Array.from(tagSet);
       
-      setHashtags(Array.from(tagSet));
-    }
-  }, [messages]);
-
-  // Update search results when search text changes
-  useEffect(() => {
-    if (!searchText.trim()) {
-      setSearchResults([]);
-      return;
-    }
-    
-    const searchTerm = searchText.toLowerCase();
-    const isHashtagSearch = searchText.startsWith('#');
-    
-    const results = messages.filter(message => {
-      if (isHashtagSearch) {
-        // Search by hashtag
-        const tag = searchText.substring(1).toLowerCase();
-        const messageHashtags = message.hashtags || [];
-        return messageHashtags.some(hashtag => hashtag.toLowerCase().includes(tag));
-      } else {
-        // Search by text content
-        return message.text.toLowerCase().includes(searchTerm);
+      // Only update if the hashtags have changed
+      if (JSON.stringify(newHashtags) !== JSON.stringify(hashtags)) {
+        setHashtags(newHashtags);
       }
-    });
-    
-    setSearchResults(results);
-  }, [searchText, messages]);
+    }
+  }, [messages, hashtags]);
+
+  // Update search results when search text changes - using debounced search
+  useEffect(() => {
+    debouncedSearch(searchText);
+  }, [searchText, debouncedSearch]);
 
   const formatDate = (date) => {
-    const messageDate = new Date(date);
+    // Handle Firestore timestamp objects
+    const messageDate = date?.toDate ? date.toDate() : new Date(date);
     const today = new Date();
     
     // If same day
@@ -288,7 +251,8 @@ const ChatScreen = () => {
   };
 
   const renderMessage = ({ item }) => {
-    const isCurrentUser = item.user.id === 'currentUser';
+    const currentUser = auth().currentUser;
+    const isCurrentUser = currentUser && item.user.id === currentUser.uid;
     
     return (
       <View style={[
@@ -296,7 +260,10 @@ const ChatScreen = () => {
         isCurrentUser ? styles.ownMessageContainer : styles.otherMessageContainer
       ]}>
         {!isCurrentUser && (
-          <Image source={{ uri: item.user.avatar }} style={styles.avatar} />
+          <Image 
+            source={{ uri: item.user.avatar || 'https://via.placeholder.com/36' }} 
+            style={styles.avatar} 
+          />
         )}
         
         <View style={[
@@ -328,37 +295,13 @@ const ChatScreen = () => {
   const handleSendMessage = () => {
     if (!messageText.trim()) return;
     
-    // Extract hashtags
-    const msgHashtags = [];
-    const matches = messageText.match(HASHTAG_REGEX);
-    if (matches) {
-      matches.forEach(match => {
-        msgHashtags.push(match.substring(1));
-      });
+    if (!auth().currentUser) {
+      Alert.alert('Authentication Required', 'You need to be logged in to send messages.');
+      return;
     }
     
-    const newMessage = {
-      id: Date.now().toString(),
-      text: messageText,
-      createdAt: new Date(),
-      user: {
-        id: 'currentUser',
-        name: 'You',
-        avatar: 'https://randomuser.me/api/portraits/women/68.jpg',
-      },
-      destinationId,
-      subDestinationId,
-      hashtags: msgHashtags
-    };
-    
-    dispatch({
-      type: 'SEND_MESSAGE_SUCCESS',
-      payload: {
-        groupId,
-        message: newMessage,
-      },
-    });
-    
+    // Send message using our Firebase action
+    dispatch(sendMessage(destinationId, subDestinationId, messageText) as any);
     setMessageText('');
   };
 
@@ -450,7 +393,7 @@ const ChatScreen = () => {
         title="Oops!"
         message={`Something went wrong: ${error}`}
         actionLabel="Try Again"
-        onAction={() => {}}
+        onAction={() => dispatch(fetchMessages(destinationId, subDestinationId) as any)}
       />
     );
   }

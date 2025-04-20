@@ -54,14 +54,20 @@ const ForgotPasswordScreen: React.FC = () => {
     setLoading(true);
     
     try {
-      // In a real app, this would make an API call to send a reset password email
-      // For now, we'll simulate a successful request after a delay
-      setTimeout(() => {
-        setLoading(false);
-        setResetSent(true);
-      }, 1500);
+      await resetPassword(email);
+      setLoading(false);
+      setResetSent(true);
     } catch (err: any) {
-      setError(err.message || 'Failed to send reset link');
+      const errorCode = err.code;
+      let errorMessage = 'Failed to send reset link';
+      
+      if (errorCode === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email address';
+      } else if (errorCode === 'auth/invalid-email') {
+        errorMessage = 'Invalid email format';
+      }
+      
+      setError(errorMessage);
       setLoading(false);
     }
   };

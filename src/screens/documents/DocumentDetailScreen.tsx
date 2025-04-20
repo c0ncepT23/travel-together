@@ -19,6 +19,9 @@ import { format } from 'date-fns';
 import { DocumentsStackParamList } from '../../navigation/DocumentsNavigator';
 import { RootState } from '../../store/reducers';
 import { TravelDocument } from '../../store/reducers/profileReducer';
+import { documentService } from '../../services/firebase/firestoreService';
+import { storageService } from '../../services/firebase/storageService';
+import { useDocumentViewer } from '../../hooks/useDocumentViewer';
 
 type DocumentDetailRouteProp = RouteProp<
   DocumentsStackParamList,
@@ -36,6 +39,7 @@ const DocumentDetailScreen: React.FC = () => {
   const { documentId } = route.params;
   
   const [loading, setLoading] = useState(true);
+  const { viewDocument, loading: viewingDocument } = useDocumentViewer();
   
   // Get document from Redux store
   const document = useSelector((state: RootState) => {
@@ -61,11 +65,14 @@ const DocumentDetailScreen: React.FC = () => {
   }, [navigation, document]);
   
   const handleViewDocument = () => {
-    Alert.alert(
-      'View Document',
-      'In a real app, this would open the document PDF or image.',
-      [{ text: 'OK' }]
-    );
+    if (document && document.fileUrl) {
+      viewDocument(document.fileUrl);
+    } else {
+      Alert.alert(
+        'No Document',
+        'This document does not have an associated file.'
+      );
+    }
   };
   
   const handleDeleteDocument = () => {
@@ -77,10 +84,24 @@ const DocumentDetailScreen: React.FC = () => {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            // In a real app, this would dispatch an action to delete the document
-            Alert.alert('Document Deleted', 'The document has been deleted.');
-            navigation.goBack();
+          onPress: async () => {
+            try {
+              if (document) {
+                // Delete from Firestore
+                await documentService.deleteDocument(document.id);
+                
+                // If there's a file URL, delete from Storage too
+                if (document.fileUrl) {
+                  await storageService.deleteFile(document.fileUrl);
+                }
+                
+                Alert.alert('Document Deleted', 'The document has been deleted.');
+                navigation.goBack();
+              }
+            } catch (error) {
+              console.error('Error deleting document:', error);
+              Alert.alert('Error', 'Failed to delete the document. Please try again.');
+            }
           },
         },
       ]
