@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useDispatch } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +21,11 @@ import { format } from 'date-fns';
 
 // Import types
 import { DocumentsStackParamList } from '../../navigation/DocumentsNavigator';
+
+type UploadDocumentRouteProp = RouteProp<
+  DocumentsStackParamList,
+  'UploadDocument'
+>;
 
 type UploadDocumentNavigationProp = StackNavigationProp<
   DocumentsStackParamList,
@@ -54,11 +59,17 @@ const uploadDocument = (documentData: any) => {
 };
 
 const UploadDocumentScreen: React.FC = () => {
+  const route = useRoute<UploadDocumentRouteProp>();
   const navigation = useNavigation<UploadDocumentNavigationProp>();
   const dispatch = useDispatch();
   
+  // Get initial document type from route params if available
+  const initialDocType = route.params?.documentType || 'flight';
+  
   // Form state
-  const [documentType, setDocumentType] = useState<'flight' | 'hotel' | 'other'>('flight');
+  const [documentType, setDocumentType] = useState<'flight' | 'hotel' | 'other'>(
+    initialDocType as 'flight' | 'hotel' | 'other'
+  );
   const [title, setTitle] = useState('');
   const [destination, setDestination] = useState('');
   const [startDate, setStartDate] = useState(new Date());
@@ -77,6 +88,13 @@ const UploadDocumentScreen: React.FC = () => {
   
   // Loading state
   const [uploading, setUploading] = useState(false);
+  
+  // Update header title based on document type
+  useEffect(() => {
+    navigation.setOptions({
+      title: `Upload ${documentType.charAt(0).toUpperCase() + documentType.slice(1)}`
+    });
+  }, [documentType, navigation]);
   
   const handleDocumentPick = async () => {
     try {
@@ -313,7 +331,9 @@ const UploadDocumentScreen: React.FC = () => {
     >
       <ScrollView style={styles.scrollView}>
         <View style={styles.header}>
-          <Text style={styles.title}>Upload Travel Document</Text>
+          <Text style={styles.title}>
+            Upload {documentType.charAt(0).toUpperCase() + documentType.slice(1)} Document
+          </Text>
           <Text style={styles.subtitle}>
             Upload your travel documents to automatically join destination groups
           </Text>

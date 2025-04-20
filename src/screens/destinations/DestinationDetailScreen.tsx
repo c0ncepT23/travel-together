@@ -5,7 +5,11 @@ import {
   StyleSheet, 
   ScrollView, 
   TouchableOpacity, 
-  ActivityIndicator 
+  ActivityIndicator,
+  Image,
+  StatusBar,
+  Platform,
+  SafeAreaView
 } from 'react-native';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -100,6 +104,11 @@ const DestinationDetailScreen: React.FC = () => {
     if (destination) {
       navigation.setOptions({
         title: destination.name,
+        headerStyle: {
+          backgroundColor: '#0066CC',
+          elevation: 0,
+          shadowOpacity: 0,
+        },
       });
     }
   }, [destinationId, dispatch, navigation, destination?.name]);
@@ -123,24 +132,42 @@ const DestinationDetailScreen: React.FC = () => {
     }, 500);
   };
 
-  const navigateToThingsToSee = (subDestination?: SubDestination) => {
+  const navigateToSubDestination = (subDestination: SubDestination) => {
     if (!destination) return;
     
-    navigation.navigate('ThingsToSee', {
-      destinationId,
-      subDestinationId: subDestination?.id,
-      title: subDestination ? subDestination.name : destination.name,
-    });
+    if (subDestination.isJoined) {
+      // Navigate directly to chat if already joined
+      navigateToChat(subDestination);
+    } else {
+      // Show join confirmation if not joined
+      handleJoinSubDestination(subDestination);
+    }
   };
 
-  const navigateToChat = (subDestination?: SubDestination) => {
+  const navigateToChat = (subDestination: SubDestination) => {
     if (!destination) return;
     
     navigation.navigate('Chat', {
       destinationId,
-      subDestinationId: subDestination?.id,
-      title: subDestination ? subDestination.name : destination.name,
+      subDestinationId: subDestination.id,
+      title: subDestination.name,
     });
+  };
+
+  const getRandomImageForDestination = (name: string): string => {
+    // In a real app, you would have real images for each destination
+    const destinations: {[key: string]: string} = {
+      'Bangkok': 'https://images.unsplash.com/photo-1563492065599-3520f775eeed',
+      'Phuket': 'https://images.unsplash.com/photo-1589394815804-964ed0c6db0b',
+      'Chiang Mai': 'https://images.unsplash.com/photo-1558005530-a7958896ec60',
+      'Thailand': 'https://images.unsplash.com/photo-1528181304800-259b08848526',
+      'Tokyo': 'https://images.unsplash.com/photo-1532236204992-f5e85c024202',
+      'Kyoto': 'https://images.unsplash.com/photo-1545569341-9eb8b30979d9',
+      'Osaka': 'https://images.unsplash.com/photo-1590559899731-a382839e5549',
+      'Japan': 'https://images.unsplash.com/photo-1542051841857-5f90071e7989',
+    };
+    
+    return destinations[name] || 'https://images.unsplash.com/photo-1528181304800-259b08848526';
   };
 
   if (!destination) {
@@ -153,119 +180,118 @@ const DestinationDetailScreen: React.FC = () => {
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{destination.name}</Text>
-        <Text style={styles.dates}>
-          {formatDateRange(destination.startDate, destination.endDate)}
-        </Text>
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Ionicons name="people" size={20} color="#0066CC" />
-            <Text style={styles.statText}>{destination.memberCount} travelers</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Ionicons name="location" size={20} color="#0066CC" />
-            <Text style={styles.statText}>
-              {destination.subDestinations.length} locations
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor="#0066CC" />
+      <ScrollView style={styles.container}>
+        <View style={styles.header}>
+          <Image 
+            source={{ uri: getRandomImageForDestination(destination.name) }}
+            style={styles.headerImage}
+          />
+          <View style={styles.headerOverlay} />
+          <View style={styles.headerContent}>
+            <Text style={styles.title}>{destination.name}</Text>
+            <Text style={styles.dates}>
+              {formatDateRange(destination.startDate, destination.endDate)}
             </Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.actionButtons}>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.primaryButton]}
-          onPress={() => navigateToChat()}
-        >
-          <Ionicons name="chatbubbles-outline" size={20} color="#FFFFFF" />
-          <Text style={styles.primaryButtonText}>Group Chat</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.secondaryButton]}
-          onPress={() => navigateToThingsToSee()}
-        >
-          <Ionicons name="list-outline" size={20} color="#0066CC" />
-          <Text style={styles.secondaryButtonText}>Things to See</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Sub-Destinations</Text>
-        <Text style={styles.sectionSubtitle}>
-          Specific locations within {destination.name}
-        </Text>
-      </View>
-
-      {destination.subDestinations.map(subDest => (
-        <View key={subDest.id} style={styles.subDestinationCard}>
-          <View style={styles.subDestContent}>
-            <Text style={styles.subDestName}>{subDest.name}</Text>
-            <Text style={styles.subDestMemberCount}>
-              {subDest.memberCount} travelers
-            </Text>
-            
-            <View style={styles.subDestActions}>
-              <TouchableOpacity
-                style={styles.subDestActionButton}
-                onPress={() => navigateToChat(subDest)}
-              >
-                <Ionicons name="chatbubbles-outline" size={18} color="#0066CC" />
-                <Text style={styles.subDestActionText}>Chat</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.subDestActionButton}
-                onPress={() => navigateToThingsToSee(subDest)}
-              >
-                <Ionicons name="list-outline" size={18} color="#0066CC" />
-                <Text style={styles.subDestActionText}>To See</Text>
-              </TouchableOpacity>
+            <View style={styles.statsContainer}>
+              <View style={styles.statItem}>
+                <Ionicons name="people" size={20} color="#FFFFFF" />
+                <Text style={styles.statText}>{destination.memberCount} travelers</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Ionicons name="location" size={20} color="#FFFFFF" />
+                <Text style={styles.statText}>
+                  {destination.subDestinations.length} locations
+                </Text>
+              </View>
             </View>
           </View>
-          
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Sub-Destinations</Text>
+          <Text style={styles.sectionSubtitle}>
+            Tap on a location to join the conversation
+          </Text>
+        </View>
+
+        {destination.subDestinations.map(subDest => (
           <TouchableOpacity
-            style={[
-              styles.joinButton,
-              subDest.isJoined ? styles.leaveButton : styles.joinButtonActive
-            ]}
-            onPress={() => handleJoinSubDestination(subDest)}
-            disabled={loading}
+            key={subDest.id}
+            style={styles.subDestinationCard}
+            onPress={() => navigateToSubDestination(subDest)}
+            activeOpacity={0.7}
           >
-            {loading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <>
-                <Ionicons
-                  name={subDest.isJoined ? 'exit-outline' : 'enter-outline'}
-                  size={16}
-                  color={subDest.isJoined ? '#666666' : '#FFFFFF'}
-                />
-                <Text
-                  style={[
-                    styles.joinButtonText,
-                    subDest.isJoined ? styles.leaveButtonText : styles.joinButtonTextActive
-                  ]}
-                >
-                  {subDest.isJoined ? 'Leave' : 'Join'}
+            <Image 
+              source={{ uri: getRandomImageForDestination(subDest.name) }} 
+              style={styles.subDestImage}
+            />
+            <View style={styles.subDestContent}>
+              <View style={styles.subDestMainInfo}>
+                <Text style={styles.subDestName}>{subDest.name}</Text>
+                <Text style={styles.subDestMemberCount}>
+                  <Ionicons name="people" size={14} color="#666666" /> {subDest.memberCount} travelers
                 </Text>
-              </>
+              </View>
+              
+              <View style={styles.subDestActions}>
+                <TouchableOpacity
+                  style={[
+                    styles.joinButton,
+                    subDest.isJoined ? styles.leaveButton : styles.joinButtonActive
+                  ]}
+                  onPress={() => handleJoinSubDestination(subDest)}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator size="small" color={subDest.isJoined ? "#666666" : "#FFFFFF"} />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name={subDest.isJoined ? 'exit-outline' : 'enter-outline'}
+                        size={16}
+                        color={subDest.isJoined ? '#666666' : '#FFFFFF'}
+                      />
+                      <Text
+                        style={[
+                          styles.joinButtonText,
+                          subDest.isJoined ? styles.leaveButtonText : styles.joinButtonTextActive
+                        ]}
+                      >
+                        {subDest.isJoined ? 'Leave' : 'Join'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            {subDest.isJoined && (
+              <View style={styles.joinedBadge}>
+                <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+                <Text style={styles.joinedBadgeText}>Joined</Text>
+              </View>
             )}
           </TouchableOpacity>
+        ))}
+        
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            You will automatically leave this group on{' '}
+            {format(new Date(destination.endDate), 'MMMM d, yyyy')}
+          </Text>
         </View>
-      ))}
-      
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          You will automatically leave this group on{' '}
-          {format(new Date(destination.endDate), 'MMMM d, yyyy')}
-        </Text>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#0066CC',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
@@ -282,20 +308,38 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   header: {
+    height: 220,
+    backgroundColor: '#0066CC',
+    position: 'relative',
+  },
+  headerImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 220,
+    width: '100%',
+  },
+  headerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 102, 204, 0.7)',
+  },
+  headerContent: {
     padding: 20,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEEEEE',
+    paddingTop: 50,
+    height: '100%',
+    justifyContent: 'flex-end',
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#333333',
+    color: '#FFFFFF',
     marginBottom: 8,
   },
   dates: {
     fontSize: 16,
-    color: '#666666',
+    color: '#FFFFFF',
+    opacity: 0.9,
     marginBottom: 12,
   },
   statsContainer: {
@@ -310,45 +354,14 @@ const styles = StyleSheet.create({
   statText: {
     marginLeft: 6,
     fontSize: 14,
-    color: '#666666',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    padding: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEEEEE',
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginHorizontal: 8,
-  },
-  primaryButton: {
-    backgroundColor: '#0066CC',
-  },
-  primaryButtonText: {
     color: '#FFFFFF',
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  secondaryButton: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#0066CC',
-  },
-  secondaryButtonText: {
-    color: '#0066CC',
-    fontWeight: '600',
-    marginLeft: 8,
   },
   sectionHeader: {
     padding: 16,
     paddingBottom: 8,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
   },
   sectionTitle: {
     fontSize: 18,
@@ -362,23 +375,35 @@ const styles = StyleSheet.create({
   },
   subDestinationCard: {
     flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 8,
-    padding: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
-    elevation: 2,
+    position: 'relative',
+  },
+  subDestImage: {
+    width: 80,
+    height: 80,
   },
   subDestContent: {
     flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  subDestMainInfo: {
+    flex: 1,
   },
   subDestName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     color: '#333333',
     marginBottom: 4,
@@ -386,39 +411,28 @@ const styles = StyleSheet.create({
   subDestMemberCount: {
     fontSize: 14,
     color: '#666666',
-    marginBottom: 8,
   },
   subDestActions: {
     flexDirection: 'row',
-    marginTop: 4,
-  },
-  subDestActionButton: {
-    flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 16,
-  },
-  subDestActionText: {
-    fontSize: 12,
-    color: '#0066CC',
-    marginLeft: 4,
   },
   joinButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 16,
+    paddingHorizontal: 16,
+    borderRadius: 20,
     minWidth: 80,
   },
   joinButtonActive: {
     backgroundColor: '#0066CC',
   },
   leaveButton: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#F0F0F0',
   },
   joinButtonText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
     marginLeft: 4,
   },
@@ -428,10 +442,27 @@ const styles = StyleSheet.create({
   leaveButtonText: {
     color: '#666666',
   },
+  joinedBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  joinedBadgeText: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontWeight: '500',
+    marginLeft: 2,
+  },
   footer: {
     padding: 16,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 16,
     marginBottom: 32,
   },
   footerText: {

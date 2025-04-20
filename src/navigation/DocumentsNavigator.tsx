@@ -9,7 +9,7 @@ import DocumentDetailScreen from '../screens/documents/DocumentDetailScreen';
 // Define parameter types for the navigation
 export type DocumentsStackParamList = {
   DocumentsList: undefined;
-  UploadDocument: undefined;
+  UploadDocument: { documentType?: 'flight' | 'hotel' | 'other' };
   DocumentDetail: { documentId: string };
 };
 
@@ -37,7 +37,13 @@ const DocumentsNavigator: React.FC = () => {
       <Stack.Screen 
         name="UploadDocument" 
         component={UploadDocumentScreen} 
-        options={{ title: 'Upload Document' }}
+        options={({ route }) => {
+          const { documentType } = route.params || {};
+          const title = documentType 
+            ? `Upload ${documentType.charAt(0).toUpperCase() + documentType.slice(1)}` 
+            : 'Upload Document';
+          return { title };
+        }}
       />
       <Stack.Screen 
         name="DocumentDetail" 

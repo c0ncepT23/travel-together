@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Alert,
+  Dimensions,
+  Animated
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -133,10 +134,33 @@ const fetchTravelDocuments = () => {
   };
 };
 
+// Tab component
+interface TabProps {
+  title: string;
+  isActive: boolean;
+  onPress: () => void;
+}
+
+const Tab: React.FC<TabProps> = ({ title, isActive, onPress }) => (
+  <TouchableOpacity 
+    style={[styles.tab, isActive && styles.activeTab]} 
+    onPress={onPress}
+  >
+    <Text style={[styles.tabText, isActive && styles.activeTabText]}>
+      {title}
+    </Text>
+    {isActive && <View style={styles.activeIndicator} />}
+  </TouchableOpacity>
+);
+
 const DocumentsListScreen: React.FC = () => {
   const navigation = useNavigation<DocumentsScreenNavigationProp>();
   const dispatch = useDispatch();
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'flight' | 'hotel'>('flight');
+  const scrollX = React.useRef(new Animated.Value(0)).current;
+  
+  const windowWidth = Dimensions.get('window').width;
 
   const { travelDocuments, loading, error } = useSelector(
     (state: RootState) => state.profile
@@ -157,8 +181,11 @@ const DocumentsListScreen: React.FC = () => {
   };
 
   const handleUploadPress = () => {
-    navigation.navigate('UploadDocument');
+    navigation.navigate('UploadDocument', { documentType: activeTab });
   };
+
+  const flightDocuments = travelDocuments.filter(doc => doc.type === 'flight');
+  const hotelDocuments = travelDocuments.filter(doc => doc.type === 'hotel');
 
   const getDocumentIcon = (type: string) => {
     switch (type) {
@@ -188,7 +215,7 @@ const DocumentsListScreen: React.FC = () => {
     return format(new Date(date), 'MMM d, yyyy');
   };
 
-  const renderDocumentItem = ({ item }: { item: TravelDocument }) => (
+  const renderFlightDocument = ({ item }: { item: TravelDocument }) => (
     <TouchableOpacity
       style={styles.documentCard}
       onPress={() => handleDocumentPress(item)}
@@ -202,7 +229,18 @@ const DocumentsListScreen: React.FC = () => {
       </View>
       <View style={styles.documentContent}>
         <Text style={styles.documentTitle}>{item.title}</Text>
-        <Text style={styles.destinationText}>{item.destination}</Text>
+        <Text style={styles.detailText}>
+          <Text style={styles.detailLabel}>Airline: </Text>
+          {item.details?.airline || 'Not specified'}
+        </Text>
+        <Text style={styles.detailText}>
+          <Text style={styles.detailLabel}>Flight: </Text>
+          {item.details?.flightNumber || 'Not specified'}
+        </Text>
+        <Text style={styles.detailText}>
+          <Text style={styles.detailLabel}>Destination: </Text>
+          {item.destination}
+        </Text>
         <Text style={styles.dateRangeText}>
           {formatDate(item.startDate)} - {formatDate(item.endDate)}
         </Text>
@@ -217,6 +255,70 @@ const DocumentsListScreen: React.FC = () => {
         <Text style={styles.statusText}>{item.status}</Text>
       </View>
     </TouchableOpacity>
+  );
+  
+  const renderHotelDocument = ({ item }: { item: TravelDocument }) => (
+    <TouchableOpacity
+      style={styles.documentCard}
+      onPress={() => handleDocumentPress(item)}
+    >
+      <View style={styles.documentIconContainer}>
+        <Ionicons
+          name={getDocumentIcon(item.type)}
+          size={24}
+          color="#0066CC"
+        />
+      </View>
+      <View style={styles.documentContent}>
+        <Text style={styles.documentTitle}>{item.title}</Text>
+        <Text style={styles.detailText}>
+          <Text style={styles.detailLabel}>Hotel: </Text>
+          {item.details?.hotelName || 'Not specified'}
+        </Text>
+        {item.details?.bookingReference && (
+          <Text style={styles.detailText}>
+            <Text style={styles.detailLabel}>Booking Ref: </Text>
+            {item.details.bookingReference}
+          </Text>
+        )}
+        <Text style={styles.detailText}>
+          <Text style={styles.detailLabel}>Location: </Text>
+          {item.destination}
+        </Text>
+        <Text style={styles.dateRangeText}>
+          {formatDate(item.startDate)} - {formatDate(item.endDate)}
+        </Text>
+      </View>
+      <View style={styles.documentStatus}>
+        <View
+          style={[
+            styles.statusDot,
+            { backgroundColor: getStatusColor(item.status) },
+          ]}
+        />
+        <Text style={styles.statusText}>{item.status}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const renderEmptyFlightsList = () => (
+    <EmptyStateView
+      icon="airplane"
+      title="No Flight Documents"
+      message="Upload your flight tickets to join destination groups automatically."
+      actionLabel="Upload Flight"
+      onAction={() => navigation.navigate('UploadDocument', { documentType: 'flight' })}
+    />
+  );
+
+  const renderEmptyHotelsList = () => (
+    <EmptyStateView
+      icon="bed"
+      title="No Hotel Documents"
+      message="Upload your hotel bookings to join destination groups automatically."
+      actionLabel="Upload Hotel Booking"
+      onAction={() => navigation.navigate('UploadDocument', { documentType: 'hotel' })}
+    />
   );
 
   if (loading && travelDocuments.length === 0) {
@@ -247,27 +349,52 @@ const DocumentsListScreen: React.FC = () => {
         <Text style={styles.sectionSubtitle}>
           Upload travel documents to join destination groups automatically
         </Text>
+        
+        <View style={styles.tabsContainer}>
+          <Tab 
+            title="Flights" 
+            isActive={activeTab === 'flight'} 
+            onPress={() => setActiveTab('flight')} 
+          />
+          <Tab 
+            title="Hotels" 
+            isActive={activeTab === 'hotel'} 
+            onPress={() => setActiveTab('hotel')} 
+          />
+        </View>
       </View>
 
-      {travelDocuments.length === 0 ? (
-        <EmptyStateView
-          icon="document-text"
-          title="No Travel Documents"
-          message="Upload your flight tickets or hotel bookings to join destination groups automatically."
-          actionLabel="Upload Document"
-          onAction={handleUploadPress}
-        />
-      ) : (
-        <FlatList
-          data={travelDocuments}
-          keyExtractor={(item) => item.id}
-          renderItem={renderDocumentItem}
-          contentContainerStyle={styles.list}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-        />
-      )}
+      <View style={styles.content}>
+        {activeTab === 'flight' ? (
+          flightDocuments.length === 0 ? (
+            renderEmptyFlightsList()
+          ) : (
+            <FlatList
+              data={flightDocuments}
+              keyExtractor={(item) => item.id}
+              renderItem={renderFlightDocument}
+              contentContainerStyle={styles.list}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+              }
+            />
+          )
+        ) : (
+          hotelDocuments.length === 0 ? (
+            renderEmptyHotelsList()
+          ) : (
+            <FlatList
+              data={hotelDocuments}
+              keyExtractor={(item) => item.id}
+              renderItem={renderHotelDocument}
+              contentContainerStyle={styles.list}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+              }
+            />
+          )
+        )}
+      </View>
 
       <TouchableOpacity style={styles.fab} onPress={handleUploadPress}>
         <Ionicons name="add" size={24} color="#FFFFFF" />
@@ -296,6 +423,43 @@ const styles = StyleSheet.create({
   sectionSubtitle: {
     fontSize: 14,
     color: '#666666',
+    marginBottom: 16,
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  activeTab: {
+    borderBottomColor: '#0066CC',
+  },
+  tabText: {
+    fontSize: 16,
+    color: '#666666',
+    fontWeight: '500',
+  },
+  activeTabText: {
+    color: '#0066CC',
+    fontWeight: '600',
+  },
+  activeIndicator: {
+    position: 'absolute',
+    bottom: -1,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: '#0066CC',
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+  },
+  content: {
+    flex: 1,
   },
   centered: {
     flex: 1,
@@ -310,10 +474,10 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: 16,
+    paddingBottom: 80, // Extra space for FAB
   },
   documentCard: {
     flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
@@ -342,24 +506,30 @@ const styles = StyleSheet.create({
     color: '#333333',
     marginBottom: 4,
   },
-  destinationText: {
+  detailText: {
     fontSize: 14,
     color: '#666666',
     marginBottom: 2,
   },
+  detailLabel: {
+    fontWeight: '500',
+    color: '#555555',
+  },
   dateRangeText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#666666',
+    marginTop: 4,
   },
   documentStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+    paddingTop: 2,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginBottom: 4,
   },
   statusText: {
     fontSize: 12,
